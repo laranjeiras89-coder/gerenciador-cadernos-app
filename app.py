@@ -1,3 +1,4 @@
+import io
 import re
 import time
 import streamlit as st
@@ -342,6 +343,19 @@ def estilizar_validacao(df_exibir: pd.DataFrame):
     return aplicar(cor, subset=colunas_alvo)
 
 
+def gerar_bytes_excel(df: pd.DataFrame, nome_aba: str = "Questões") -> bytes:
+    """Serializa um DataFrame como .xlsx em memória (sem tocar em disco),
+    pronto pra usar em st.download_button."""
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name=nome_aba[:31] or "Questões")
+    return buffer.getvalue()
+
+
+def nome_arquivo(base: str, extensao: str) -> str:
+    return f"{base}_{datetime.now().strftime('%Y%m%d_%H%M')}.{extensao}"
+
+
 # ============================================================
 # CARREGAMENTO
 # ============================================================
@@ -435,7 +449,23 @@ with aba_ver:
     if f_valid:
         df_filt = df_filt[df_filt[COL_VALID_PROGRAMA].isin(f_valid)]
 
-    st.caption(f"{len(df_filt)} de {len(df_prog)} questões exibidas (programa: {programa_atual or '—'}).")
+    cap_col, exp_col1, exp_col2 = st.columns([4, 1, 1])
+    cap_col.caption(f"{len(df_filt)} de {len(df_prog)} questões exibidas (programa: {programa_atual or '—'}).")
+    if not df_filt.empty:
+        exp_col1.download_button(
+            "⬇️ CSV (filtro atual)",
+            data=df_filt[COLS_TODAS].to_csv(index=False).encode("utf-8"),
+            file_name=nome_arquivo(f"questoes_filtro_{(programa_atual or 'todos').replace(' ', '_')}", "csv"),
+            mime="text/csv",
+            key="download_csv_filtrado",
+        )
+        exp_col2.download_button(
+            "⬇️ Excel (filtro atual)",
+            data=gerar_bytes_excel(df_filt[COLS_TODAS], "Questões"),
+            file_name=nome_arquivo(f"questoes_filtro_{(programa_atual or 'todos').replace(' ', '_')}", "xlsx"),
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="download_xlsx_filtrado",
+        )
 
     colunas_exibir = [c for c in COLS_TODAS if c not in ("Programa", COL_VALID_CADERNO)]
     selecao = st.dataframe(
@@ -864,11 +894,18 @@ with aba_rel:
             st.info("Sem dados suficientes.")
 
         st.markdown("---")
-        st.download_button(
+        bkp_col1, bkp_col2 = st.columns(2)
+        bkp_col1.download_button(
             "⬇️ Baixar backup deste programa (CSV)",
             data=df_prog[COLS_TODAS].to_csv(index=False).encode("utf-8"),
-            file_name=f"backup_{(programa_atual or 'todos').replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+            file_name=nome_arquivo(f"backup_{(programa_atual or 'todos').replace(' ', '_')}", "csv"),
             mime="text/csv",
+        )
+        bkp_col2.download_button(
+            "⬇️ Baixar backup deste programa (Excel)",
+            data=gerar_bytes_excel(df_prog[COLS_TODAS], programa_atual or "Questões"),
+            file_name=nome_arquivo(f"backup_{(programa_atual or 'todos').replace(' ', '_')}", "xlsx"),
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
         st.write("#### 🗑️ Últimas exclusões")
@@ -917,3 +954,18 @@ with aba_rel:
             st.dataframe(cartoes_g, use_container_width=True, hide_index=True)
         else:
             st.info("Sem dados suficientes.")
+
+        st.markdown("---")
+        bkp_g1, bkp_g2 = st.columns(2)
+        bkp_g1.download_button(
+            "⬇️ Baixar backup geral (todos os programas, CSV)",
+            data=df[COLS_TODAS].to_csv(index=False).encode("utf-8"),
+            file_name=nome_arquivo("backup_geral", "csv"),
+            mime="text/csv",
+        )
+        bkp_g2.download_button(
+            "⬇️ Baixar backup geral (todos os programas, Excel)",
+            data=gerar_bytes_excel(df[COLS_TODAS], "Questões"),
+            file_name=nome_arquivo("backup_geral", "xlsx"),
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
