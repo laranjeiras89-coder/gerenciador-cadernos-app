@@ -20,8 +20,10 @@ SCOPES = [
 WORKSHEET_DADOS = "Banco de questões"
 WORKSHEET_EXCLUSOES = "Exclusoes"
 
-# Colunas de dados (A:J) — as colunas K e L (Validação) têm fórmulas na planilha
-# e NUNCA devem ser sobrescritas por este app.
+# Colunas de dados (A:J) — as colunas K e L (Validação) NÃO são mais lidas nem
+# gravadas pelo app: são calculadas em Python (ver calcular_validacoes), sempre
+# do zero a cada carregamento, a partir dos dados reais em A:J. A planilha
+# nunca é a fonte de verdade da validação.
 COLS_DADOS = [
     "Programa", "Número da questão", "Banca", "Tipo (questão)", "Ano",
     "Concurso", "Assunto", "Código (caderno)", "Tipo (caderno)", "Direcionamento",
@@ -91,29 +93,38 @@ def get_worksheet_exclusoes():
         return ws
 
 
-def formula_validacao_caderno(linha: int) -> str:
-    # REPETIDA aqui = mesma questão duas vezes no MESMO caderno+direcionamento
-    # DENTRO DO MESMO PROGRAMA. Precisa cruzar com Programa também, porque
-    # códigos de caderno como "C01" se repetem entre programas diferentes
-    # (ex.: EXPERT e APRENDIZ), o que gerava falso positivo sem esse critério.
-    # O TEC não gera cadernos assim — isso é sempre erro de cadastro.
-    return (
-        f'=IF($B{linha}="";"-";'
-        f'IF(COUNTIFS($B$2:$B{linha};$B{linha};$A$2:$A{linha};$A{linha};'
-        f'$H$2:$H{linha};$H{linha};$J$2:$J{linha};$J{linha})>1;"REPETIDA";"OK"))'
-    )
+def calcular_validacoes(df: pd.DataFrame) -> pd.DataFrame:
+    """Calcula 'Validação (caderno)' e 'Validação (programa)' em Python (pandas),
+    a partir dos dados atuais — não são mais fórmulas gravadas na planilha.
+    Isso elimina de vez a classe de bug 'fórmula desatualizada em linha antiga':
+    a cada carregamento, os dois campos são recalculados do zero a partir dos
+    dados reais, então nunca podem ficar dessincronizados.
 
+    REPETIDA em 'Validação (caderno)' = mesma questão duas vezes no MESMO
+    caderno+direcionamento do MESMO programa (o TEC não gera cadernos assim —
+    é sempre erro de cadastro).
+    REPETIDA em 'Validação (programa)' = mesma questão aparece mais de uma vez
+    dentro do MESMO Programa+Direcionamento (cruzando vários cadernos daquele
+    direcionamento). Usar a mesma questão em direcionamentos DIFERENTES do
+    mesmo programa é normal e não conta como repetida."""
+    df = df.copy()
+    num_vazio = df["Número da questão"].astype(str).str.strip() == ""
 
-def formula_validacao_programa(linha: int) -> str:
-    # REPETIDA aqui = mesma questão aparece mais de uma vez dentro do MESMO
-    # Programa+Direcionamento (cruzando vários cadernos daquele direcionamento).
-    # Usar a mesma questão em direcionamentos DIFERENTES do mesmo programa é
-    # normal e não conta como repetida.
-    return (
-        f'=IF($B{linha}="";"-";'
-        f'IF(COUNTIFS($B$2:$B{linha};$B{linha};$A$2:$A{linha};$A{linha};'
-        f'$J$2:$J{linha};$J{linha})>1;"REPETIDA";"OK"))'
-    )
+    chave_caderno = df[["Programa", "Número da questão", "Código (caderno)", "Direcionamento"]].astype(str).apply(lambda s: s.str.strip())
+    cont_caderno = chave_caderno.groupby(list(chave_caderno.columns))["Programa"].transform("size")
+
+    chave_programa = df[["Programa", "Número da questão", "Direcionamento"]].astype(str).apply(lambda s: s.str.strip())
+    cont_programa = chave_programa.groupby(list(chave_programa.columns))["Programa"].transform("size")
+
+    df[COL_VALID_CADERNO] = "OK"
+    df.loc[cont_caderno.values > 1, COL_VALID_CADERNO] = "REPETIDA"
+    df.loc[num_vazio, COL_VALID_CADERNO] = "-"
+
+    df[COL_VALID_PROGRAMA] = "OK"
+    df.loc[cont_programa.values > 1, COL_VALID_PROGRAMA] = "REPETIDA"
+    df.loc[num_vazio, COL_VALID_PROGRAMA] = "-"
+
+    return df
 
 
 @st.cache_data(ttl=30)
@@ -125,12 +136,14 @@ def carregar_dados() -> pd.DataFrame:
     header = valores[0]
     linhas = valores[1:]
     df = pd.DataFrame(linhas, columns=header)
-    for c in COLS_TODAS:
+    for c in COLS_DADOS:
         if c not in df.columns:
             df[c] = ""
-    df = df[COLS_TODAS]
+    df = df[COLS_DADOS]
     # linha real na planilha (1-based, +2 porque a linha 1 é o header e o índice do df começa em 0)
     df.insert(0, "_linha", range(2, 2 + len(df)))
+    df = calcular_validacoes(df)
+    df = df[["_linha"] + COLS_TODAS]
     return df
 
 
@@ -148,11 +161,6 @@ def adicionar_questao(dados: dict):
     linha = proxima_linha_livre()
     valores = [str(dados.get(c, "")) for c in COLS_DADOS]
     ws.update(f"A{linha}:J{linha}", [valores], value_input_option="USER_ENTERED")
-    ws.update(
-        f"K{linha}:L{linha}",
-        [[formula_validacao_caderno(linha), formula_validacao_programa(linha)]],
-        value_input_option="USER_ENTERED",
-    )
     limpar_cache()
 
 
@@ -190,12 +198,6 @@ def adicionar_questoes_em_lote(linhas_dados: list):
         l_fim = l_ini + len(bloco) - 1
 
         _update_com_retry(ws, f"A{l_ini}:J{l_fim}", bloco)
-
-        formulas = [
-            [formula_validacao_caderno(l_ini + i), formula_validacao_programa(l_ini + i)]
-            for i in range(len(bloco))
-        ]
-        _update_com_retry(ws, f"K{l_ini}:L{l_fim}", formulas)
 
     limpar_cache()
 
