@@ -1,4 +1,5 @@
 import re
+import time
 import streamlit as st
 import pandas as pd
 import altair as alt
@@ -152,19 +153,47 @@ def adicionar_questao(dados: dict):
     limpar_cache()
 
 
+TAMANHO_LOTE_IMPORTACAO = 50
+
+
+def _update_com_retry(ws, range_name: str, values: list, tentativas: int = 3):
+    ultimo_erro = None
+    for tentativa in range(1, tentativas + 1):
+        try:
+            ws.update(range_name, values, value_input_option="USER_ENTERED")
+            return
+        except gspread.exceptions.APIError as e:
+            ultimo_erro = e
+            if tentativa < tentativas:
+                time.sleep(2 * tentativa)
+    raise RuntimeError(
+        f"Falha ao escrever no intervalo {range_name} após {tentativas} tentativas. "
+        f"Detalhe da API: {ultimo_erro}"
+    ) from ultimo_erro
+
+
 def adicionar_questoes_em_lote(linhas_dados: list):
-    """linhas_dados: lista de listas, já na ordem de COLS_DADOS."""
+    """linhas_dados: lista de listas, já na ordem de COLS_DADOS.
+    Escreve em lotes pequenos (com retry) em vez de um único range gigante,
+    pra evitar timeouts/erros da API do Sheets em importações grandes."""
     if not linhas_dados:
         return
     ws = get_worksheet_dados()
     linha_inicial = proxima_linha_livre()
-    linha_final = linha_inicial + len(linhas_dados) - 1
-    ws.update(f"A{linha_inicial}:J{linha_final}", linhas_dados, value_input_option="USER_ENTERED")
-    formulas = [
-        [formula_validacao_caderno(linha_inicial + i), formula_validacao_programa(linha_inicial + i)]
-        for i in range(len(linhas_dados))
-    ]
-    ws.update(f"K{linha_inicial}:L{linha_final}", formulas, value_input_option="USER_ENTERED")
+
+    for offset in range(0, len(linhas_dados), TAMANHO_LOTE_IMPORTACAO):
+        bloco = linhas_dados[offset : offset + TAMANHO_LOTE_IMPORTACAO]
+        l_ini = linha_inicial + offset
+        l_fim = l_ini + len(bloco) - 1
+
+        _update_com_retry(ws, f"A{l_ini}:J{l_fim}", bloco)
+
+        formulas = [
+            [formula_validacao_caderno(l_ini + i), formula_validacao_programa(l_ini + i)]
+            for i in range(len(bloco))
+        ]
+        _update_com_retry(ws, f"K{l_ini}:L{l_fim}", formulas)
+
     limpar_cache()
 
 
@@ -653,7 +682,16 @@ with aba_import:
                 else:
                     st.success("Nenhum problema encontrado nas colunas obrigatórias.")
                     if st.button("🚀 Confirmar importação"):
-                        adicionar_questoes_em_lote(df_novo.values.tolist())
+                        with st.spinner(f"Importando {len(df_novo)} questões em lotes de {TAMANHO_LOTE_IMPORTACAO}..."):
+                            try:
+                                adicionar_questoes_em_lote(df_novo.values.tolist())
+                            except RuntimeError as e:
+                                st.error(f"⚠️ Importação falhou no meio do caminho: {e}")
+                                st.info(
+                                    "As linhas já escritas antes da falha permanecem na planilha — "
+                                    "confira na aba Visualizar & Editar antes de tentar de novo, para não duplicar."
+                                )
+                                st.stop()
                         st.success(f"{len(df_novo)} questões importadas com sucesso!")
                         st.rerun()
 
