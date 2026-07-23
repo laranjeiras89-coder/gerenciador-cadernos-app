@@ -714,6 +714,8 @@ with aba_rel:
                 "Número": contagem_q.index,
                 "Vezes usada": contagem_q.values,
                 "Banca": [detalhes.loc[n, "Banca"] for n in contagem_q.index],
+                "Ano": [detalhes.loc[n, "Ano"] for n in contagem_q.index],
+                "Concurso": [detalhes.loc[n, "Concurso"] for n in contagem_q.index],
                 "Assunto": [detalhes.loc[n, "Assunto"] for n in contagem_q.index],
             })
             st.dataframe(cartoes, use_container_width=True, hide_index=True)
@@ -768,6 +770,8 @@ with aba_rel:
                     for n in contagem_q_g.index
                 ],
                 "Banca": [detalhes_g.loc[n, "Banca"] for n in contagem_q_g.index],
+                "Ano": [detalhes_g.loc[n, "Ano"] for n in contagem_q_g.index],
+                "Concurso": [detalhes_g.loc[n, "Concurso"] for n in contagem_q_g.index],
             })
             st.dataframe(cartoes_g, use_container_width=True, hide_index=True)
         else:
