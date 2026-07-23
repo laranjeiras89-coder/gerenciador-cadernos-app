@@ -711,6 +711,14 @@ with aba_import:
         if st.button("🔍 Verificar e preencher dados faltantes"):
             with st.spinner("Cruzando questões e preenchendo o que for possível..."):
                 resultado = preencher_dados_faltantes()
+            # Guarda o resultado na sessão pra sobreviver ao rerun (precisamos
+            # recarregar os dados em toda a tela, mas sem perder o resumo do
+            # que acabou de ser preenchido).
+            st.session_state["resultado_preenchimento"] = resultado
+            st.rerun()
+
+        if "resultado_preenchimento" in st.session_state:
+            resultado = st.session_state.pop("resultado_preenchimento")
             if resultado["total"] == 0:
                 st.info("Nada para preencher — não achei nenhum campo vazio com valor inequívoco disponível.")
             else:
@@ -721,7 +729,6 @@ with aba_import:
                 with st.expander("Ver detalhes do que foi preenchido"):
                     for linha_txt in resultado["detalhes"]:
                         st.write(f"- {linha_txt}")
-                st.rerun()
 
     with st.expander("📋 Prompt pronto pra pedir a uma IA formatar os dados antes de importar"):
         st.code(PROMPT_IMPORTACAO, language="markdown")
