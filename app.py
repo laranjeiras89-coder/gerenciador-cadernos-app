@@ -343,12 +343,20 @@ def estilizar_validacao(df_exibir: pd.DataFrame):
     return aplicar(cor, subset=colunas_alvo)
 
 
+def sanitizar_nome_aba(nome: str) -> str:
+    """Nomes de aba do Excel não podem ter : \\ / ? * [ ] nem passar de 31
+    caracteres. 'DPEN [APRENDIZ] [PRÉ-EDITAL] - 2026' tem colchetes, por
+    exemplo, então precisa ser limpo antes de virar sheet_name."""
+    limpo = re.sub(r'[:\\/?*\[\]]', "", nome or "").strip()
+    return limpo[:31] or "Questões"
+
+
 def gerar_bytes_excel(df: pd.DataFrame, nome_aba: str = "Questões") -> bytes:
     """Serializa um DataFrame como .xlsx em memória (sem tocar em disco),
     pronto pra usar em st.download_button."""
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name=nome_aba[:31] or "Questões")
+        df.to_excel(writer, index=False, sheet_name=sanitizar_nome_aba(nome_aba))
     return buffer.getvalue()
 
 
