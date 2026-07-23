@@ -92,12 +92,15 @@ def get_worksheet_exclusoes():
 
 
 def formula_validacao_caderno(linha: int) -> str:
-    # REPETIDA aqui = mesma questão duas vezes no MESMO caderno+direcionamento.
+    # REPETIDA aqui = mesma questão duas vezes no MESMO caderno+direcionamento
+    # DENTRO DO MESMO PROGRAMA. Precisa cruzar com Programa também, porque
+    # códigos de caderno como "C01" se repetem entre programas diferentes
+    # (ex.: EXPERT e APRENDIZ), o que gerava falso positivo sem esse critério.
     # O TEC não gera cadernos assim — isso é sempre erro de cadastro.
     return (
         f'=IF($B{linha}="";"-";'
-        f'IF(COUNTIFS($B$2:$B{linha};$B{linha};$H$2:$H{linha};$H{linha};'
-        f'$J$2:$J{linha};$J{linha})>1;"REPETIDA";"OK"))'
+        f'IF(COUNTIFS($B$2:$B{linha};$B{linha};$A$2:$A{linha};$A{linha};'
+        f'$H$2:$H{linha};$H{linha};$J$2:$J{linha};$J{linha})>1;"REPETIDA";"OK"))'
     )
 
 
@@ -195,6 +198,53 @@ def adicionar_questoes_em_lote(linhas_dados: list):
         _update_com_retry(ws, f"K{l_ini}:L{l_fim}", formulas)
 
     limpar_cache()
+
+
+CAMPOS_INTRINSECOS = ["Banca", "Tipo (questão)", "Ano", "Concurso", "Assunto"]
+COL_LETRA = {
+    "Programa": "A", "Número da questão": "B", "Banca": "C", "Tipo (questão)": "D",
+    "Ano": "E", "Concurso": "F", "Assunto": "G", "Código (caderno)": "H",
+    "Tipo (caderno)": "I", "Direcionamento": "J",
+}
+
+
+def preencher_dados_faltantes() -> dict:
+    """Usa 'Número da questão' como chave única em TODO o banco (todos os
+    programas) pra preencher campos intrínsecos da questão (Banca, Tipo
+    (questão), Ano, Concurso, Assunto) que estejam vazios, aproveitando
+    valores já cadastrados em outra linha com o mesmo número. Só preenche
+    quando o valor é inequívoco (um único valor distinto entre todas as
+    ocorrências não-vazias daquele número) — se houver conflito real de
+    dados entre ocorrências, não mexe e deixa pra revisão manual."""
+    df_atual = carregar_dados()
+    atualizacoes = []
+    resumo = {campo: 0 for campo in CAMPOS_INTRINSECOS}
+    detalhes = []
+
+    for campo in CAMPOS_INTRINSECOS:
+        preenchidos = df_atual[df_atual[campo].astype(str).str.strip() != ""]
+        candidatos = preenchidos.groupby("Número da questão")[campo].apply(
+            lambda s: sorted(set(v.strip() for v in s))
+        )
+        mapa_valor_unico = {num: vals[0] for num, vals in candidatos.items() if len(vals) == 1}
+
+        vazios = df_atual[df_atual[campo].astype(str).str.strip() == ""]
+        for _, row in vazios.iterrows():
+            num = row["Número da questão"]
+            if num in mapa_valor_unico:
+                valor = mapa_valor_unico[num]
+                linha = int(row["_linha"])
+                col_letra = COL_LETRA[campo]
+                atualizacoes.append({"range": f"{col_letra}{linha}", "values": [[valor]]})
+                resumo[campo] += 1
+                detalhes.append(f"Linha {linha} (nº {num}): {campo} = '{valor}'")
+
+    if atualizacoes:
+        ws = get_worksheet_dados()
+        ws.batch_update(atualizacoes, value_input_option="USER_ENTERED")
+        limpar_cache()
+
+    return {"resumo": resumo, "detalhes": detalhes, "total": len(atualizacoes)}
 
 
 def editar_questao(linha: int, dados: dict):
@@ -305,6 +355,28 @@ except Exception as e:
     st.stop()
 
 # ============================================================
+# ALERTA GLOBAL — VALIDAÇÃO (CADERNO)
+# ============================================================
+# "Validação (caderno)" não fica mais visível como coluna normal (é
+# irrelevante no dia a dia, já que o TEC nunca gera cadernos com duplicata
+# interna), mas continua sendo um duplocheck importante de erro de
+# cadastro — por isso vira um alerta destacado, olhando o banco inteiro.
+_repetidas_caderno = df[df[COL_VALID_CADERNO] == "REPETIDA"]
+if not _repetidas_caderno.empty:
+    st.error(
+        f"⚠️ {len(_repetidas_caderno)} questão(ões) com **Validação (caderno) = REPETIDA** "
+        "— mesma questão duas vezes no mesmo caderno+direcionamento do mesmo programa. "
+        "O TEC não gera cadernos assim: isso é sempre erro de cadastro."
+    )
+    with st.expander("Ver questões com Validação (caderno) = REPETIDA"):
+        st.dataframe(
+            _repetidas_caderno[
+                ["Programa", "Número da questão", "Código (caderno)", "Direcionamento", "_linha"]
+            ],
+            hide_index=True, use_container_width=True,
+        )
+
+# ============================================================
 # CABEÇALHO + FILTRO DE PROGRAMA (multi-programa)
 # ============================================================
 st.title("📚 Gerenciador de Cadernos")
@@ -363,7 +435,7 @@ with aba_ver:
 
     st.caption(f"{len(df_filt)} de {len(df_prog)} questões exibidas (programa: {programa_atual or '—'}).")
 
-    colunas_exibir = [c for c in COLS_TODAS if c != "Programa"]
+    colunas_exibir = [c for c in COLS_TODAS if c not in ("Programa", COL_VALID_CADERNO)]
     selecao = st.dataframe(
         estilizar_validacao(df_filt[colunas_exibir]),
         use_container_width=True,
@@ -626,6 +698,28 @@ with aba_add:
 # ============================================================
 with aba_import:
     st.subheader("📥 Importar questões em lote (CSV ou Excel)")
+
+    with st.expander("🔧 Manutenção — preencher dados faltantes usando o resto do banco"):
+        st.caption(
+            "Usa 'Número da questão' como chave única em todo o banco (todos os programas) "
+            "para preencher Banca, Tipo (questão), Ano, Concurso e Assunto vazios, quando "
+            "já existir um valor inequívoco cadastrado em outra linha com o mesmo número. "
+            "Não mexe em nada se houver conflito de dados entre ocorrências do mesmo número."
+        )
+        if st.button("🔍 Verificar e preencher dados faltantes"):
+            with st.spinner("Cruzando questões e preenchendo o que for possível..."):
+                resultado = preencher_dados_faltantes()
+            if resultado["total"] == 0:
+                st.info("Nada para preencher — não achei nenhum campo vazio com valor inequívoco disponível.")
+            else:
+                st.success(f"{resultado['total']} campo(s) preenchido(s).")
+                st.write(
+                    ", ".join(f"{campo}: {qtd}" for campo, qtd in resultado["resumo"].items() if qtd > 0)
+                )
+                with st.expander("Ver detalhes do que foi preenchido"):
+                    for linha_txt in resultado["detalhes"]:
+                        st.write(f"- {linha_txt}")
+                st.rerun()
 
     with st.expander("📋 Prompt pronto pra pedir a uma IA formatar os dados antes de importar"):
         st.code(PROMPT_IMPORTACAO, language="markdown")
