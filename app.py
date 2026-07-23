@@ -39,7 +39,7 @@ CHAVE_OUTRO = "+ Outro (digitar)"
 
 # Listas fechadas (validação + menu suspenso)
 TIPO_QUESTAO_CANON = ["ABCDE", "C/E"]
-TIPO_CADERNO_CANON = ["Questões", "Teste", "RevisãoFav"]
+TIPO_CADERNO_CANON = ["Questão", "Teste", "RevisãoFav"]
 ANO_MIN = 2010
 
 COR_REPETIDA = "#D93025"
@@ -67,8 +67,8 @@ sufixo de banca no nome = GERAL; com sufixo = a banca daquele sufixo).
 Regras dos demais campos:
 - "Tipo (questão)": use exatamente "ABCDE" (múltipla escolha) ou "C/E" (certo/errado). Nunca outro valor.
 - "Ano": 4 dígitos, entre 2010 e {ano_atual} (ex.: 2024). Deixe vazio se não souber — nunca invente.
-- "Tipo (caderno)": use exatamente um destes valores: Questões, Teste, RevisãoFav. Nunca outro valor \
-(mesmo que uma planilha antiga mostre "Questão" ou "Revisão" no singular — isso é nomenclatura legada).
+- "Tipo (caderno)": use exatamente um destes valores: Questão, Teste, RevisãoFav. Nunca outro valor \
+(mesmo que uma planilha antiga mostre "Questões" no plural, ou "Revisão" — isso é nomenclatura legada).
 - "Concurso": copie o texto tipo "CARGO (ÓRGÃO)/ÓRGÃO/ANO" que aparece no PDF/página da questão, sem o ano \
 (o ano já vai na coluna Ano).
 - Não invente dado nenhum: se não souber Banca, Ano, Concurso ou Assunto de alguma questão, deixe o campo vazio.
