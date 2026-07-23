@@ -44,16 +44,31 @@ ANO_MIN = 2010
 
 COR_REPETIDA = "#D93025"
 
-PROMPT_IMPORTACAO = """Você vai me ajudar a transformar uma lista de questões de um caderno do TEC Concursos \
+def _gerar_prompt_importacao() -> str:
+    ano_atual = datetime.now().year
+    return f"""Você vai me ajudar a transformar uma lista de questões de um caderno do TEC Concursos \
 em uma tabela CSV com estas colunas EXATAS, nesta ordem (a primeira linha do CSV deve ser exatamente este \
 cabeçalho):
 
 Programa,Número da questão,Banca,Tipo (questão),Ano,Concurso,Assunto,Código (caderno),Tipo (caderno),Direcionamento
 
-Regras:
+Campos que NUNCA podem ficar vazios (o sistema rejeita a linha inteira se faltar um destes):
+- "Programa": copie EXATAMENTE o nome já usado no sistema para este programa (confira no seletor "Programa" \
+do app antes de montar o CSV — inclusive espaços, colchetes e acentos; um nome levemente diferente cria um \
+programa novo por engano, misturando os dados).
+- "Número da questão": o código que aparece depois de "www.tecconcursos.com.br/questoes/".
+- "Código (caderno)": ex. "C01", "C02" — o código do caderno no TEC.
+
+Campo que deveria vir preenchido na quase totalidade dos casos (não é bloqueado pelo sistema se vier vazio, \
+mas uma linha sem isso atrapalha os relatórios e a checagem de repetição):
+- "Direcionamento": GERAL, CESPE, FGV, FCC etc., conforme o caderno de onde a questão veio (caderno sem \
+sufixo de banca no nome = GERAL; com sufixo = a banca daquele sufixo).
+
+Regras dos demais campos:
 - "Tipo (questão)": use exatamente "ABCDE" (múltipla escolha) ou "C/E" (certo/errado). Nunca outro valor.
-- "Ano": 4 dígitos (ex.: 2024). Deixe vazio se não souber.
-- "Tipo (caderno)": use exatamente um destes valores: Questões, Teste, RevisãoFav. Nunca outro valor.
+- "Ano": 4 dígitos, entre 2010 e {ano_atual} (ex.: 2024). Deixe vazio se não souber — nunca invente.
+- "Tipo (caderno)": use exatamente um destes valores: Questões, Teste, RevisãoFav. Nunca outro valor \
+(mesmo que uma planilha antiga mostre "Questão" ou "Revisão" no singular — isso é nomenclatura legada).
 - "Concurso": copie o texto tipo "CARGO (ÓRGÃO)/ÓRGÃO/ANO" que aparece no PDF/página da questão, sem o ano \
 (o ano já vai na coluna Ano).
 - Não invente dado nenhum: se não souber Banca, Ano, Concurso ou Assunto de alguma questão, deixe o campo vazio.
@@ -64,6 +79,9 @@ Segue o conteúdo que preciso que você organize nesse formato:
 
 [COLE AQUI O TEXTO OU PDF DO CADERNO]
 """
+
+
+PROMPT_IMPORTACAO = _gerar_prompt_importacao()
 
 
 @st.cache_resource
