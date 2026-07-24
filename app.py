@@ -961,6 +961,16 @@ with aba_rel:
             anos_validos = df[df["Ano"].astype(str).str.strip() != ""]
             grafico_barra_horizontal(anos_validos["Ano"].value_counts().sort_index(ascending=False))
 
+        col_g3, col_g4 = st.columns(2)
+        with col_g3:
+            st.write("**Top 10 Concursos**")
+            cv_g = df[df["Concurso"].astype(str).str.strip() != ""]
+            grafico_barra_horizontal(cv_g["Concurso"].value_counts(), top_n=10)
+        with col_g4:
+            st.write("**Top 10 Assuntos**")
+            av_g = df[df["Assunto"].astype(str).str.strip() != ""]
+            grafico_barra_horizontal(av_g["Assunto"].value_counts(), top_n=10)
+
         st.markdown("---")
         st.write("**🏆 Top 10 questões mais reaproveitadas (geral)**")
         contagem_q_g = df["Número da questão"].value_counts().head(10)
